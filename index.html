@@ -12,7 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Ondas">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 <div id="net" hidden>Sin conexión · solo suenan las descargas</div>
@@ -20,7 +20,8 @@
   <h1><i data-i="wave"></i>Ondas</h1>
   <button data-view="search" class="on"><i data-i="search"></i><span>Buscar</span></button>
   <button data-view="library"><i data-i="heart"></i><span>Biblioteca</span></button>
-  <button data-view="offline"><i data-i="download"></i><span>Sin conexión</span></button>
+  <button data-view="lists"><i data-i="playlist"></i><span>Listas</span></button>
+  <button data-view="offline"><i data-i="download"></i><span>Descargas</span></button>
   <button data-view="settings"><i data-i="settings"></i><span>Ajustes</span></button>
 </nav>
 <main id="view"></main>
@@ -45,6 +46,6 @@
 <div id="toast"></div>
 <input id="files" type="file" accept="audio/*" multiple hidden>
 <audio id="audio" preload="metadata"></audio>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

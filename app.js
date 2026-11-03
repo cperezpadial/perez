@@ -27,6 +27,9 @@ const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   trash: '<path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
+  more: '<circle class="f" cx="5" cy="12" r="1.6"/><circle class="f" cx="12" cy="12" r="1.6"/><circle class="f" cx="19" cy="12" r="1.6"/>',
+  playlist: '<path d="M4 6h12M4 11h12M4 16h7M18 14v6m-3-3h6"/>',
+  ext: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   upload: '<path d="M12 16V5m0 0-4 4m4-4 4 4M5 20h14"/>'
 };
 const ic = n => `<i><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg></i>`;
@@ -105,6 +108,14 @@ async function itSearch(q) {
   const j = await (await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=40&country=ES&term=${encodeURIComponent(q)}`)).json();
   return (j.results || []).filter(r => r.previewUrl).map(r => ({ id: 'it:' + r.trackId, src: 'it', nodl: true, title: r.trackName, artist: r.artistName, album: r.collectionName,
     cover: (r.artworkUrl100 || '').replace('100x100', '300x300'), url: r.previewUrl, duration: 30 }));
+}
+
+async function topES() {
+  const f = await (await fetch('https://rss.applemarketingtools.com/api/v2/es/music/most-played/25/songs.json')).json();
+  const ids = f.feed.results.map(r => r.id).join(',');
+  const j = await (await fetch('https://itunes.apple.com/lookup?id=' + ids + '&country=ES')).json();
+  const byId = new Map((j.results || []).filter(r => r.previewUrl).map(r => [String(r.trackId), r]));
+  return f.feed.results.map(r => byId.get(String(r.id))).filter(Boolean).map(r => ({ id: 'it:' + r.trackId, src: 'it', nodl: true, title: r.trackName, artist: r.artistName, album: r.collectionName, cover: (r.artworkUrl100 || '').replace('100x100', '300x300'), url: r.previewUrl, duration: 30 }));
 }
 
 // ---------- Estado del reproductor ----------
@@ -196,7 +207,49 @@ async function removeDownload(t) {
   await refreshSaved(); toast('Descarga eliminada'); render();
 }
 
-function trackList(list) {
+// ---------- Listas de reproducción ----------
+const lists = () => store.get('lists', {});
+const plain = t => { const { blob, liked, added, ...r } = t; return r; };
+function addToList(name, t) {
+  const L = lists(); L[name] = L[name] || [];
+  if (L[name].some(x => x.id === t.id)) return toast('Ya está en ' + name);
+  L[name].push(plain(t)); store.set('lists', L); toast('Añadida a ' + name);
+}
+function sheet(title, items) {
+  const o = document.createElement('div'); o.id = 'sheet';
+  o.innerHTML = `<div class="box"><h3>${esc(title)}</h3></div>`;
+  const box = o.firstChild; const close = () => o.remove();
+  items.forEach(it => {
+    const el = document.createElement(it.href ? 'a' : 'button'); el.className = 'item';
+    if (it.href) { el.href = it.href; el.target = '_blank'; el.rel = 'noopener'; }
+    el.innerHTML = `${it.icon ? ic(it.icon) : ''}<span>${esc(it.label)}</span>`;
+    el.onclick = () => { close(); if (it.fn) it.fn(); };
+    box.append(el);
+  });
+  o.onclick = e => { if (e.target === o) close(); };
+  document.body.append(o);
+}
+function pickList(t) {
+  const names = Object.keys(lists());
+  sheet('Añadir a una lista', [
+    { label: 'Nueva lista…', icon: 'plus', fn: () => { const n = (prompt('Nombre de la lista') || '').trim(); if (n) addToList(n, t); } },
+    ...names.map(n => ({ label: n, icon: 'playlist', fn: () => addToList(n, t) }))
+  ]);
+}
+function trackMenu(t, opts) {
+  const q = encodeURIComponent((t.title + ' ' + (t.artist || '')).trim());
+  const items = [
+    { label: 'Añadir a la cola', icon: 'list', fn: () => { queue.push(t); renderQueue(); toast('Añadida a la cola'); } },
+    { label: 'Añadir a una lista', icon: 'playlist', fn: () => pickList(t) }
+  ];
+  if (opts && opts.onRemove) items.push({ label: 'Quitar de esta lista', icon: 'trash', fn: opts.onRemove });
+  if (t.src === 'it' || t.src === 'aud') items.push(
+    { label: 'Escuchar completa en Spotify', icon: 'ext', href: 'https://open.spotify.com/search/' + q },
+    { label: 'Escuchar completa en YouTube Music', icon: 'ext', href: 'https://music.youtube.com/search?q=' + q });
+  sheet(t.title, items);
+}
+
+function trackList(list, opts) {
   const ul = document.createElement('ul'); ul.className = 'tracks';
   list.forEach((t, i) => {
     const r = saved.get(t.id), liked = r && r.liked, off = r && r.blob;
@@ -208,7 +261,7 @@ function trackList(list) {
         ${t.src === 'local' ? '' : `<button data-a="like" class="${liked ? 'on' : ''}" title="Biblioteca">${ic('heart')}</button>`}
         ${t.src === 'local' || t.nodl ? '' : `<button data-a="dl" class="${off ? 'on' : ''}" title="${off ? 'Quitar descarga' : 'Descargar para escuchar sin conexión'}">${ic(off ? 'check' : 'download')}</button>`}
         ${t.src === 'local' ? `<button data-a="rm" title="Eliminar">${ic('trash')}</button>` : ''}
-        <button data-a="q" title="Añadir a la cola">${ic('plus')}</button>
+        <button data-a="more" title="Más opciones">${ic('more')}</button>
       </div>`;
     li.querySelector('.t').onclick = li.querySelector('img').onclick = () => playQueue(list, i);
     li.querySelector('.acts').onclick = async e => {
@@ -216,7 +269,7 @@ function trackList(list) {
       if (b.dataset.a === 'like') { await toggleLike(t); render(); }
       else if (b.dataset.a === 'dl') off ? removeDownload(t) : download(t, b);
       else if (b.dataset.a === 'rm') { await dbDel(t.id); await refreshSaved(); render(); }
-      else { queue.push(t); renderQueue(); toast('Añadida a la cola'); }
+      else trackMenu(t, opts);
     };
     ul.append(li);
   });
@@ -227,10 +280,10 @@ function trackList(list) {
 let current = 'search', lastQuery = '', lastSource = 'it', lastResults = null, openAlbum = null;
 async function render() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.view === current));
-  await ({ search: vSearch, library: vLibrary, offline: vOffline, settings: vSettings })[current]();
+  await ({ search: vSearch, library: vLibrary, lists: vLists, offline: vOffline, settings: vSettings })[current]();
   markCurrent();
 }
-document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { current = b.dataset.view; openAlbum = null; render(); });
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { current = b.dataset.view; openAlbum = null; openList = null; render(); });
 
 function vSearch() {
   view.innerHTML = `<h2>Buscar</h2>
@@ -246,6 +299,7 @@ function vSearch() {
     if (!lastResults) {
       res.innerHTML = `<p class="empty">Busca un artista o una canción:</p>
         <div class="chips">${['Bad Bunny', 'Anuel AA', 'Rosalía', 'Quevedo', 'Karol G', 'Feid', 'Peso Pluma', 'Shakira'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
+      if (online()) { if (!topES.cache) topES.cache = topES().catch(() => []); topES.cache.then(tr => { if (!tr.length || lastResults || openAlbum || current !== 'search') return; const h = document.createElement('h3'); h.textContent = 'Lo más escuchado en España'; res.append(h, trackList(tr)); markCurrent(); }); }
       res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; $('#src').value = 'it'; $('#sf').requestSubmit(); } };
       return;
     }
@@ -282,6 +336,38 @@ async function vLibrary() {
   if (!list.length) view.insertAdjacentHTML('beforeend', '<p class="empty">Aún no has guardado canciones. Pulsa el corazón en cualquier resultado.</p>');
   else { const row = document.createElement('div'); row.className = 'row'; row.innerHTML = `<button class="btn">${ic('play')}Reproducir todo</button>`; row.firstChild.onclick = () => playQueue(list, 0); view.append(row, trackList(list)); }
 }
+let openList = null;
+function vLists() {
+  const L = lists(); const names = Object.keys(L);
+  view.innerHTML = '';
+  if (openList && L[openList]) {
+    const name = openList, tr = L[name];
+    const head = document.createElement('div'); head.className = 'row';
+    head.innerHTML = `<button class="btn ghost" id="lb">${ic('back')}Listas</button><h2 style="margin:0;flex:1">${esc(name)}</h2>${tr.length ? `<button class="btn" id="lp">${ic('play')}Reproducir</button>` : ''}<button class="btn ghost" id="ld" title="Borrar lista">${ic('trash')}</button>`;
+    view.append(head);
+    head.querySelector('#lb').onclick = () => { openList = null; render(); };
+    if (head.querySelector('#lp')) head.querySelector('#lp').onclick = () => playQueue(tr, 0);
+    head.querySelector('#ld').onclick = () => sheet('¿Borrar "' + name + '"?', [{ label: 'Borrar lista', icon: 'trash', fn: () => { delete L[name]; store.set('lists', L); openList = null; render(); } }, { label: 'Cancelar', icon: 'x' }]);
+    if (!tr.length) view.insertAdjacentHTML('beforeend', '<p class="empty">Lista vacía. Añade canciones desde el menú ··· de cualquier canción.</p>');
+    else view.append(trackList(tr, { onRemove: null }));
+    // quitar canción: menú propio con opción de quitar
+    view.querySelectorAll('.tracks li').forEach((li, i) => {
+      const t = tr[i]; const b = li.querySelector('[data-a=more]');
+      if (b) b.onclick = e => { e.stopPropagation(); trackMenu(t, { onRemove: () => { L[name].splice(i, 1); store.set('lists', L); render(); } }); };
+    });
+    return;
+  }
+  view.innerHTML = '<h2>Mis listas</h2><div class="row"><button class="btn" id="nl">' + ic('plus') + 'Nueva lista</button></div>';
+  $('#nl').onclick = () => { const n = (prompt('Nombre de la lista') || '').trim(); if (n && !L[n]) { L[n] = []; store.set('lists', L); openList = n; render(); } };
+  if (!names.length) { view.insertAdjacentHTML('beforeend', '<p class="empty">Crea tu primera lista y añade canciones desde el menú ··· de cualquier resultado.</p>'); return; }
+  const g = document.createElement('div'); g.className = 'grid';
+  names.forEach(n => { const c = document.createElement('button'); c.className = 'card';
+    const first = L[n][0];
+    c.innerHTML = `<img src="${esc(first ? cover(first) : 'icon.svg')}" alt="" onerror="this.src='icon.svg'"><b>${esc(n)}</b><small>${L[n].length} ${L[n].length === 1 ? 'canción' : 'canciones'}</small>`;
+    c.onclick = () => { openList = n; render(); }; g.append(c); });
+  view.append(g);
+}
+
 async function vOffline() {
   await refreshSaved();
   const list = [...saved.values()].filter(t => t.blob).sort((a, b) => b.added - a.added);
@@ -318,3 +404,5 @@ const netBar = () => { $('#net').hidden = online(); if (!online() && current ===
 addEventListener('online', netBar); addEventListener('offline', netBar);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 (async () => { await refreshSaved(); netBar(); view.dataset.ready = 1; render(); })();
+
+addEventListener('keydown', e => { if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#play').click(); } });
