@@ -12,7 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Ondas">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 <div id="net" hidden>Sin conexión · solo suenan las descargas</div>
@@ -25,6 +25,7 @@
   <button data-view="settings"><i data-i="settings"></i><span>Ajustes</span></button>
 </nav>
 <main id="view"></main>
+<div id="ytbox" hidden><div id="ytp"></div></div>
 <footer id="player">
   <div class="now">
     <img id="cover" alt="" src="icon.svg">
@@ -46,6 +47,6 @@
 <div id="toast"></div>
 <input id="files" type="file" accept="audio/*" multiple hidden>
 <audio id="audio" preload="metadata"></audio>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

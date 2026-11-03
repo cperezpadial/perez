@@ -104,6 +104,15 @@ async function audSearch(q) {
   return (j.data || []).map(r => ({ id: 'aud:' + r.id, src: 'aud', nodl: true, title: r.title, artist: r.user && r.user.name, cover: r.artwork && (r.artwork['480x480'] || r.artwork['150x150']),
     url: `${A}/${r.id}/stream?app_name=ondas`, duration: r.duration }));
 }
+const dec = h => { const d = document.createElement('textarea'); d.innerHTML = h; return d.value; };
+async function ytSearch(q) {
+  const k = store.get('ytkey', '');
+  if (!k) throw new Error('Añade tu clave de YouTube en Ajustes');
+  const j = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&videoEmbeddable=true&maxResults=25&q=${encodeURIComponent(q)}&key=${encodeURIComponent(k)}`)).json();
+  if (j.error) throw new Error(j.error.code === 403 ? 'La clave de YouTube no es válida o se agotó el límite de hoy' : 'Error de YouTube: ' + j.error.message);
+  return (j.items || []).map(r => ({ id: 'yt:' + r.id.videoId, src: 'yt', vid: r.id.videoId, nodl: true, title: dec(r.snippet.title), artist: dec(r.snippet.channelTitle).replace(/ - Topic$/, ''),
+    cover: r.snippet.thumbnails && (r.snippet.thumbnails.medium || r.snippet.thumbnails.default).url }));
+}
 async function itSearch(q) {
   const j = await (await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=40&country=ES&term=${encodeURIComponent(q)}`)).json();
   return (j.results || []).filter(r => r.previewUrl).map(r => ({ id: 'it:' + r.trackId, src: 'it', nodl: true, title: r.trackName, artist: r.artistName, album: r.collectionName,
@@ -118,9 +127,35 @@ async function topES() {
   return f.feed.results.map(r => byId.get(String(r.id))).filter(Boolean).map(r => ({ id: 'it:' + r.trackId, src: 'it', nodl: true, title: r.trackName, artist: r.artistName, album: r.collectionName, cover: (r.artworkUrl100 || '').replace('100x100', '300x300'), url: r.previewUrl, duration: 30 }));
 }
 
+// ---------- YouTube (reproductor oficial incrustado) ----------
+let yt = null, ytApi = null, ytTimer = null;
+function ytLoadApi() {
+  if (!ytApi) ytApi = new Promise((res, rej) => {
+    window.onYouTubeIframeAPIReady = res;
+    const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; sc.onerror = () => { ytApi = null; rej(new Error('yt')); }; document.head.append(sc);
+  });
+  return ytApi;
+}
+async function ytPlay(t) {
+  $('#ytbox').hidden = false;
+  await ytLoadApi();
+  if (yt) yt.loadVideoById(t.vid);
+  else await new Promise(res => { yt = new YT.Player('ytp', { width: '100%', height: '100%', videoId: t.vid, playerVars: { playsinline: 1, autoplay: 1, rel: 0 }, events: { onReady: res, onStateChange: e => { if (e.data === 0) next('ended'); } } }); });
+  yt.setVolume(audio.volume * 100);
+  clearInterval(ytTimer); ytTimer = setInterval(ytTick, 500);
+}
+function ytStop() { clearInterval(ytTimer); if (yt) { try { yt.pauseVideo(); } catch {} } $('#ytbox').hidden = true; }
+function ytTick() {
+  if (!yt || !isYT()) return;
+  const c = yt.getCurrentTime() || 0, d = yt.getDuration() || 0;
+  $('#cur').textContent = fmt(c); $('#dur').textContent = fmt(d); if (d) $('#seek').value = c / d * 1000;
+  $('#play').innerHTML = ic(yt.getPlayerState() === 1 ? 'pause' : 'play');
+}
+
 // ---------- Estado del reproductor ----------
 let queue = [], idx = -1, shuffle = false, repeat = 0; // repeat: 0 no, 1 todo, 2 una
 let curUrl = null;
+const isYT = () => !!(queue[idx] && queue[idx].src === 'yt');
 const saved = new Map(); // id -> track guardado (biblioteca / descargas)
 
 async function refreshSaved() { saved.clear(); (await dbAll()).forEach(t => saved.set(t.id, t)); }
@@ -129,11 +164,18 @@ async function playQueue(list, i) { queue = list.slice(); idx = i; renderQueue()
 async function load() {
   const t = queue[idx]; if (!t) return;
   const rec = saved.get(t.id);
-  if (curUrl) { URL.revokeObjectURL(curUrl); curUrl = null; }
-  if (rec && rec.blob) { curUrl = URL.createObjectURL(rec.blob); audio.src = curUrl; }
-  else if (!online()) { toast('Sin conexión: esta canción no está descargada'); return next(true); }
-  else audio.src = t.url;
-  try { await audio.play(); } catch (e) { if (e.name !== 'AbortError') toast('No se pudo reproducir'); }
+  if (t.src === 'yt') {
+    audio.pause();
+    if (!online()) return toast('Sin conexión');
+    ytPlay(t).catch(() => toast('No se pudo cargar YouTube'));
+  } else {
+    ytStop();
+    if (curUrl) { URL.revokeObjectURL(curUrl); curUrl = null; }
+    if (rec && rec.blob) { curUrl = URL.createObjectURL(rec.blob); audio.src = curUrl; }
+    else if (!online()) { toast('Sin conexión: esta canción no está descargada'); return next(true); }
+    else audio.src = t.url;
+    try { await audio.play(); } catch (e) { if (e.name !== 'AbortError') toast('No se pudo reproducir'); }
+  }
   $('#ptitle').textContent = t.title; $('#partist').textContent = t.artist || '';
   $('#cover').src = cover(t);
   if ('mediaSession' in navigator) {
@@ -143,21 +185,21 @@ async function load() {
 }
 function next(auto) {
   if (!queue.length) return;
-  if (repeat === 2 && auto === 'ended') { audio.currentTime = 0; audio.play(); return; }
+  if (repeat === 2 && auto === 'ended') { if (isYT()) { yt.seekTo(0); yt.playVideo(); } else { audio.currentTime = 0; audio.play(); } return; }
   if (shuffle && queue.length > 1) { let n; do n = Math.floor(Math.random() * queue.length); while (n === idx); idx = n; }
   else if (idx + 1 < queue.length) idx++;
   else if (repeat === 1 || auto !== 'ended') idx = 0;
   else return;
   load();
 }
-function prev() { if (audio.currentTime > 3) audio.currentTime = 0; else { idx = (idx - 1 + queue.length) % queue.length; load(); } }
+function prev() { if (isYT() ? yt && yt.getCurrentTime() > 3 : audio.currentTime > 3) { if (isYT()) yt.seekTo(0); else audio.currentTime = 0; } else { idx = (idx - 1 + queue.length) % queue.length; load(); } }
 
-$('#play').onclick = () => { if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
+$('#play').onclick = () => { if (isYT()) { if (yt) yt.getPlayerState() === 1 ? yt.pauseVideo() : yt.playVideo(); return; } if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
 $('#next').onclick = () => next(); $('#prev').onclick = prev;
 $('#shuffle').onclick = e => { shuffle = !shuffle; e.currentTarget.classList.toggle('active', shuffle); };
 $('#repeat').onclick = e => { repeat = (repeat + 1) % 3; e.currentTarget.classList.toggle('active', repeat > 0); e.currentTarget.innerHTML = ic(repeat === 2 ? 'repeat1' : 'repeat'); };
-$('#volume').oninput = e => audio.volume = e.target.value;
-$('#seek').oninput = e => { if (isFinite(audio.duration)) audio.currentTime = audio.duration * e.target.value / 1000; };
+$('#volume').oninput = e => { audio.volume = e.target.value; if (yt) yt.setVolume(e.target.value * 100); };
+$('#seek').oninput = e => { if (isYT()) { if (yt) yt.seekTo(yt.getDuration() * e.target.value / 1000, true); return; } if (isFinite(audio.duration)) audio.currentTime = audio.duration * e.target.value / 1000; };
 $('#queueBtn').onclick = () => { $('#queue').hidden = !$('#queue').hidden; };
 $('#closeQ').onclick = () => $('#queue').hidden = true;
 audio.onplay = audio.onpause = () => { $('#play').innerHTML = ic(audio.paused ? 'play' : 'pause'); };
@@ -288,7 +330,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { curren
 function vSearch() {
   view.innerHTML = `<h2>Buscar</h2>
     <form class="row" id="sf"><input type="search" id="q" placeholder="Artista, álbum o género…" value="${esc(lastQuery)}">
-      <select id="src"><option value="it">Oficial · fragmentos de 30 s</option><option value="aud">Audius · independientes</option><option value="ia">Internet Archive</option><option value="jam">Jamendo</option></select>
+      <select id="src"><option value="it">Oficial · fragmentos de 30 s</option><option value="yt">YouTube · canciones completas</option><option value="aud">Audius · independientes</option><option value="ia">Internet Archive</option><option value="jam">Jamendo</option></select>
       <button class="btn">Buscar</button></form>
     <div id="res"></div>`;
   $('#src').value = lastSource;
@@ -300,7 +342,7 @@ function vSearch() {
       res.innerHTML = `<p class="empty">Busca un artista o una canción:</p>
         <div class="chips">${['Bad Bunny', 'Anuel AA', 'Rosalía', 'Quevedo', 'Karol G', 'Feid', 'Peso Pluma', 'Shakira'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
       if (online()) { if (!topES.cache) topES.cache = topES().catch(() => []); topES.cache.then(tr => { if (!tr.length || lastResults || openAlbum || current !== 'search') return; const h = document.createElement('h3'); h.textContent = 'Lo más escuchado en España'; res.append(h, trackList(tr)); markCurrent(); }); }
-      res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; $('#src').value = 'it'; $('#sf').requestSubmit(); } };
+      res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; if ($('#src').value !== 'yt') $('#src').value = 'it'; $('#sf').requestSubmit(); } };
       return;
     }
     if (!lastResults.length) { res.innerHTML = '<p class="empty">Sin resultados.</p>'; return; }
@@ -318,7 +360,7 @@ function vSearch() {
     if (!lastQuery && lastSource !== 'aud') return toast('Escribe algo para buscar');
     if (!online()) return toast('Sin conexión');
     res.innerHTML = '<p class="empty">Buscando…</p>';
-    try { lastResults = await ({ aud: audSearch, it: itSearch, ia: iaSearch, jam: jamSearch })[lastSource](lastQuery); } catch (err) { lastResults = null; res.innerHTML = `<p class="empty">${esc(err.message || 'Error de red')}</p>`; return; }
+    try { lastResults = await ({ yt: ytSearch, aud: audSearch, it: itSearch, ia: iaSearch, jam: jamSearch })[lastSource](lastQuery); } catch (err) { lastResults = null; res.innerHTML = `<p class="empty">${esc(err.message || 'Error de red')}</p>`; return; }
     show();
   };
   show();
@@ -389,12 +431,16 @@ $('#files').onchange = async e => {
 async function vSettings() {
   let est = ''; try { const s = await navigator.storage.estimate(); est = `${(s.usage / 1048576).toFixed(0)} MB usados de ${(s.quota / 1048576).toFixed(0)} MB`; } catch {}
   view.innerHTML = `<h2>Ajustes</h2>
-    <div class="card-note">Ondas solo reproduce música con licencia libre o archivos tuyos. No incluye ni descarga música protegida por derechos de autor.</div>
+    <div class="card-note">Ondas reproduce música libre, fragmentos oficiales de iTunes y vídeos oficiales de YouTube con su propio reproductor. No descarga ni guarda música protegida por derechos de autor.</div>
+    <h3>YouTube (canciones completas)</h3>
+    <p class="empty" style="padding:0">Gratis, sin tarjeta. Crea una clave en <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">Google Cloud</a>: proyecto nuevo → habilitar “YouTube Data API v3” → Credenciales → Crear clave de API. Pégala aquí; se guarda solo en este dispositivo.</p>
+    <form class="row" id="yf"><input type="text" id="ykey" placeholder="Clave de API de YouTube" autocomplete="off" value="${esc(store.get('ytkey', ''))}"><button class="btn">Guardar</button></form>
     <h3>Jamendo (opcional)</h3>
     <p class="empty" style="padding:0">Cientos de miles de canciones Creative Commons. Crea una app gratuita en <a href="https://devportal.jamendo.com" target="_blank" rel="noopener" style="color:var(--ac)">devportal.jamendo.com</a> y pega aquí tu <i>client_id</i>.</p>
     <form class="row" id="jf"><input type="text" id="jid" placeholder="client_id" value="${esc(store.get('jamendo', ''))}"><button class="btn">Guardar</button></form>
     <h3>Almacenamiento</h3><p class="empty" style="padding:0">${est || 'No disponible'}</p>
     <button class="btn ghost" id="clr">Borrar todas las descargas</button>`;
+  $('#yf').onsubmit = e => { e.preventDefault(); store.set('ytkey', $('#ykey').value.trim()); toast('Clave guardada'); };
   $('#jf').onsubmit = e => { e.preventDefault(); store.set('jamendo', $('#jid').value.trim()); toast('Guardado'); };
   $('#clr').onclick = async () => { if (!confirm('¿Borrar todas las descargas y la biblioteca?')) return; for (const id of saved.keys()) await dbDel(id); await refreshSaved(); toast('Borrado'); render(); };
 }
