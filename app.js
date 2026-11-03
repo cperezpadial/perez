@@ -446,6 +446,7 @@ async function vSettings() {
 }
 
 // ---------- Arranque ----------
+{ const m = location.hash.match(/^#ytkey=([\w-]{20,})$/); if (m) { store.set('ytkey', m[1]); history.replaceState(null, '', location.pathname + location.search); setTimeout(() => toast('Clave de YouTube guardada'), 600); } }
 const netBar = () => { $('#net').hidden = online(); if (!online() && current === 'search') { current = 'offline'; } if (view.dataset.ready) render(); };
 addEventListener('online', netBar); addEventListener('offline', netBar);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
