@@ -1,4 +1,4 @@
-:root{--bg:#0e0f12;--panel:#16181d;--panel2:#1f2229;--line:#262a32;--fg:#eceef2;--mut:#8b909c;--ac:#6ee7b7;--ac2:#4fd1a0;--pad:16px;--r:12px}
+:root{--bg:#0b0d10;--panel:#16181d;--panel2:#1f2229;--line:#262a32;--fg:#eceef2;--mut:#8b909c;--ac:#6ee7b7;--ac2:#4fd1a0;--pad:16px;--r:12px}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:8px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .15s,color .15s}
