@@ -1,5 +1,5 @@
-const CACHE = 'ondas-v5';
-const SHELL = ['./', './index.html', './styles.css?v=5', './app.js?v=5', './manifest.webmanifest', './icon.svg', './icon-192.png'];
+const CACHE = 'ondas-v6';
+const SHELL = ['./', './index.html', './styles.css?v=6', './app.js?v=6', './manifest.webmanifest', './icon.svg', './icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

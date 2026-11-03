@@ -102,7 +102,7 @@ async function audSearch(q) {
     url: `${A}/${r.id}/stream?app_name=ondas`, duration: r.duration }));
 }
 async function itSearch(q) {
-  const j = await (await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=30&term=${encodeURIComponent(q)}`)).json();
+  const j = await (await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=40&country=ES&term=${encodeURIComponent(q)}`)).json();
   return (j.results || []).filter(r => r.previewUrl).map(r => ({ id: 'it:' + r.trackId, src: 'it', nodl: true, title: r.trackName, artist: r.artistName, album: r.collectionName,
     cover: (r.artworkUrl100 || '').replace('100x100', '300x300'), url: r.previewUrl, duration: 30 }));
 }
@@ -224,7 +224,7 @@ function trackList(list) {
 }
 
 // ---------- Vistas ----------
-let current = 'search', lastQuery = '', lastSource = 'aud', lastResults = null, openAlbum = null;
+let current = 'search', lastQuery = '', lastSource = 'it', lastResults = null, openAlbum = null;
 async function render() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.view === current));
   await ({ search: vSearch, library: vLibrary, offline: vOffline, settings: vSettings })[current]();
@@ -235,7 +235,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { curren
 function vSearch() {
   view.innerHTML = `<h2>Buscar</h2>
     <form class="row" id="sf"><input type="search" id="q" placeholder="Artista, álbum o género…" value="${esc(lastQuery)}">
-      <select id="src"><option value="aud">Audius · canciones completas</option><option value="it">iTunes · fragmentos de 30 s</option><option value="ia">Internet Archive</option><option value="jam">Jamendo</option></select>
+      <select id="src"><option value="it">Oficial · fragmentos de 30 s</option><option value="aud">Audius · independientes</option><option value="ia">Internet Archive</option><option value="jam">Jamendo</option></select>
       <button class="btn">Buscar</button></form>
     <div id="res"></div>`;
   $('#src').value = lastSource;
@@ -244,9 +244,9 @@ function vSearch() {
     res.innerHTML = '';
     if (openAlbum) { res.append(albumHead(openAlbum.album), trackList(openAlbum.tracks)); return; }
     if (!lastResults) {
-      res.innerHTML = `<p class="empty">Elige una fuente, escribe lo que quieras o empieza por aquí:</p>
-        <div class="chips"><button class="chip" data-g="" data-t="1">Tendencias ahora</button>${['jazz', 'ambient', 'rock', 'classical', 'electronic', 'folk', 'piano', 'blues'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
-      res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; $('#src').value = b.dataset.t ? 'aud' : $('#src').value; $('#sf').requestSubmit(); } };
+      res.innerHTML = `<p class="empty">Busca un artista o una canción:</p>
+        <div class="chips">${['Bad Bunny', 'Anuel AA', 'Rosalía', 'Quevedo', 'Karol G', 'Feid', 'Peso Pluma', 'Shakira'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
+      res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; $('#src').value = 'it'; $('#sf').requestSubmit(); } };
       return;
     }
     if (!lastResults.length) { res.innerHTML = '<p class="empty">Sin resultados.</p>'; return; }
