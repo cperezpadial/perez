@@ -417,6 +417,14 @@ async function vOffline() {
   view.innerHTML = `<h2>Sin conexión</h2><div class="row"><button class="btn" id="imp">${ic('upload')}Importar mis archivos</button>
     ${list.length ? `<button class="btn ghost" id="pa">${ic('play')}Reproducir todo</button>` : ''}<span class="empty" style="padding:0">${list.length} ${list.length === 1 ? 'canción' : 'canciones'} · ${(bytes / 1048576).toFixed(1)} MB</span></div>`;
   $('#imp').onclick = () => $('#files').click();
+  view.insertAdjacentHTML('beforeend', `<h3>Conseguir música gratis</h3>
+    <p class="empty" style="padding:0 0 8px">Descarga el MP3 desde estas webs y luego pulsa “Importar mis archivos” para tenerlo en Ondas sin conexión.</p>
+    <div class="links">
+      <a class="item" href="https://studio.youtube.com/channel/UC/music" target="_blank" rel="noopener">${ic('ext')}<span><b>Biblioteca de audio de YouTube</b><small>Música y sonidos gratis · mejor desde un ordenador</small></span></a>
+      <a class="item" href="https://bandcamp.com/tag/free-download" target="_blank" rel="noopener">${ic('ext')}<span><b>Bandcamp · descargas gratis</b><small>Artistas que regalan su música</small></span></a>
+      <a class="item" href="https://freemusicarchive.org" target="_blank" rel="noopener">${ic('ext')}<span><b>Free Music Archive</b><small>Música con licencia libre</small></span></a>
+      <a class="item" href="https://www.jamendo.com" target="_blank" rel="noopener">${ic('ext')}<span><b>Jamendo</b><small>Música libre, con descarga</small></span></a>
+    </div>`);
   if ($('#pa')) $('#pa').onclick = () => playQueue(list, 0);
   if (!list.length) view.insertAdjacentHTML('beforeend', '<p class="empty">Descarga canciones con la flecha o importa las tuyas: se guardan en este dispositivo y suenan sin internet.</p>');
   else view.append(trackList(list));
