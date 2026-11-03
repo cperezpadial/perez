@@ -249,6 +249,28 @@ async function removeDownload(t) {
   await refreshSaved(); toast('Descarga eliminada'); render();
 }
 
+async function downloadAll(list, btn) {
+  const todo = list.filter(t => !t.nodl && t.src !== 'local' && !(saved.get(t.id) && saved.get(t.id).blob));
+  if (!todo.length) return toast('Ya está todo descargado');
+  if (!online()) return toast('Necesitas conexión para descargar');
+  if (btn) btn.disabled = true;
+  let ok = 0;
+  for (const t of todo) {
+    if (btn) btn.lastChild.textContent = `Descargando ${ok + 1}/${todo.length}…`;
+    try {
+      const res = await fetch(t.url); if (!res.ok) throw 0;
+      const r = saved.get(t.id) || {};
+      await dbPut({ ...t, ...r, blob: await res.blob(), added: r.added || Date.now() }); await refreshSaved(); ok++;
+    } catch {}
+  }
+  toast(ok + ' de ' + todo.length + ' descargadas'); render();
+}
+const dlAllBtn = list => {
+  if (!list.some(t => !t.nodl && t.src !== 'local')) return null;
+  const b = document.createElement('button'); b.className = 'btn ghost'; b.innerHTML = ic('download') + '<span>Descargar todo</span>';
+  b.onclick = () => downloadAll(list, b); return b;
+};
+
 // ---------- Listas de reproducción ----------
 const lists = () => store.get('lists', {});
 const plain = t => { const { blob, liked, added, ...r } = t; return r; };
@@ -337,7 +359,7 @@ function vSearch() {
   const res = $('#res');
   const show = () => {
     res.innerHTML = '';
-    if (openAlbum) { res.append(albumHead(openAlbum.album), trackList(openAlbum.tracks)); return; }
+    if (openAlbum) { const h = albumHead(openAlbum.album), d = dlAllBtn(openAlbum.tracks); if (d) h.append(d); res.append(h, trackList(openAlbum.tracks)); return; }
     if (!lastResults) {
       res.innerHTML = `<p class="empty">Busca un artista o una canción:</p>
         <div class="chips">${['Bad Bunny', 'Anuel AA', 'Rosalía', 'Quevedo', 'Karol G', 'Feid', 'Peso Pluma', 'Shakira'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
@@ -353,7 +375,7 @@ function vSearch() {
         c.onclick = async () => { res.innerHTML = '<p class="empty">Cargando…</p>'; try { openAlbum = { album: a, tracks: await iaTracks(a) }; } catch { toast('Error al cargar el álbum'); } show(); };
         g.append(c); });
       res.append(g);
-    } else res.append(trackList(lastResults));
+    } else { const d = dlAllBtn(lastResults); if (d) { const r = document.createElement('div'); r.className = 'row'; r.append(d); res.append(r); } res.append(trackList(lastResults)); }
   };
   $('#sf').onsubmit = async e => {
     e.preventDefault(); lastQuery = $('#q').value.trim(); lastSource = $('#src').value; openAlbum = null;
