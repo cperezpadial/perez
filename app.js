@@ -94,6 +94,19 @@ async function jamSearch(q) {
   return (j.results || []).map(r => ({ id: 'jam:' + r.id, src: 'jam', title: r.name, artist: r.artist_name, album: r.album_name, cover: r.image, url: r.audio, duration: r.duration }));
 }
 
+async function audSearch(q) {
+  const A = 'https://api.audius.co/v1/tracks';
+  const u = q ? `${A}/search?query=${encodeURIComponent(q)}&limit=30&app_name=ondas` : `${A}/trending?limit=30&app_name=ondas`;
+  const j = await (await fetch(u)).json();
+  return (j.data || []).map(r => ({ id: 'aud:' + r.id, src: 'aud', nodl: true, title: r.title, artist: r.user && r.user.name, cover: r.artwork && (r.artwork['480x480'] || r.artwork['150x150']),
+    url: `${A}/${r.id}/stream?app_name=ondas`, duration: r.duration }));
+}
+async function itSearch(q) {
+  const j = await (await fetch(`https://itunes.apple.com/search?media=music&entity=song&limit=30&term=${encodeURIComponent(q)}`)).json();
+  return (j.results || []).filter(r => r.previewUrl).map(r => ({ id: 'it:' + r.trackId, src: 'it', nodl: true, title: r.trackName, artist: r.artistName, album: r.collectionName,
+    cover: (r.artworkUrl100 || '').replace('100x100', '300x300'), url: r.previewUrl, duration: 30 }));
+}
+
 // ---------- Estado del reproductor ----------
 let queue = [], idx = -1, shuffle = false, repeat = 0; // repeat: 0 no, 1 todo, 2 una
 let curUrl = null;
@@ -193,7 +206,7 @@ function trackList(list) {
       <div class="t"><b>${esc(t.title)}</b><small>${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}${off ? ` · <span class="tag" title="Disponible sin conexión">${ic('download')}</span>` : ''}</small></div>
       <div class="acts">
         ${t.src === 'local' ? '' : `<button data-a="like" class="${liked ? 'on' : ''}" title="Biblioteca">${ic('heart')}</button>`}
-        ${t.src === 'local' ? '' : `<button data-a="dl" class="${off ? 'on' : ''}" title="${off ? 'Quitar descarga' : 'Descargar para escuchar sin conexión'}">${ic(off ? 'check' : 'download')}</button>`}
+        ${t.src === 'local' || t.nodl ? '' : `<button data-a="dl" class="${off ? 'on' : ''}" title="${off ? 'Quitar descarga' : 'Descargar para escuchar sin conexión'}">${ic(off ? 'check' : 'download')}</button>`}
         ${t.src === 'local' ? `<button data-a="rm" title="Eliminar">${ic('trash')}</button>` : ''}
         <button data-a="q" title="Añadir a la cola">${ic('plus')}</button>
       </div>`;
@@ -211,7 +224,7 @@ function trackList(list) {
 }
 
 // ---------- Vistas ----------
-let current = 'search', lastQuery = '', lastSource = 'ia', lastResults = null, openAlbum = null;
+let current = 'search', lastQuery = '', lastSource = 'aud', lastResults = null, openAlbum = null;
 async function render() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.view === current));
   await ({ search: vSearch, library: vLibrary, offline: vOffline, settings: vSettings })[current]();
@@ -222,7 +235,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { curren
 function vSearch() {
   view.innerHTML = `<h2>Buscar</h2>
     <form class="row" id="sf"><input type="search" id="q" placeholder="Artista, álbum o género…" value="${esc(lastQuery)}">
-      <select id="src"><option value="ia">Internet Archive</option><option value="jam">Jamendo</option></select>
+      <select id="src"><option value="aud">Audius · canciones completas</option><option value="it">iTunes · fragmentos de 30 s</option><option value="ia">Internet Archive</option><option value="jam">Jamendo</option></select>
       <button class="btn">Buscar</button></form>
     <div id="res"></div>`;
   $('#src').value = lastSource;
@@ -231,9 +244,9 @@ function vSearch() {
     res.innerHTML = '';
     if (openAlbum) { res.append(albumHead(openAlbum.album), trackList(openAlbum.tracks)); return; }
     if (!lastResults) {
-      res.innerHTML = `<p class="empty">Solo música con licencia libre (Creative Commons). Empieza por un género:</p>
-        <div class="chips">${['jazz', 'ambient', 'rock', 'classical', 'electronic', 'folk', 'piano', 'blues'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
-      res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; $('#sf').requestSubmit(); } };
+      res.innerHTML = `<p class="empty">Elige una fuente, escribe lo que quieras o empieza por aquí:</p>
+        <div class="chips"><button class="chip" data-g="" data-t="1">Tendencias ahora</button>${['jazz', 'ambient', 'rock', 'classical', 'electronic', 'folk', 'piano', 'blues'].map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div>`;
+      res.onclick = e => { const b = e.target.closest('[data-g]'); if (b) { $('#q').value = b.dataset.g; $('#src').value = b.dataset.t ? 'aud' : $('#src').value; $('#sf').requestSubmit(); } };
       return;
     }
     if (!lastResults.length) { res.innerHTML = '<p class="empty">Sin resultados.</p>'; return; }
@@ -248,10 +261,10 @@ function vSearch() {
   };
   $('#sf').onsubmit = async e => {
     e.preventDefault(); lastQuery = $('#q').value.trim(); lastSource = $('#src').value; openAlbum = null;
-    if (!lastQuery) return;
+    if (!lastQuery && lastSource !== 'aud') return toast('Escribe algo para buscar');
     if (!online()) return toast('Sin conexión');
     res.innerHTML = '<p class="empty">Buscando…</p>';
-    try { lastResults = lastSource === 'ia' ? await iaSearch(lastQuery) : await jamSearch(lastQuery); } catch (err) { lastResults = null; res.innerHTML = `<p class="empty">${esc(err.message || 'Error de red')}</p>`; return; }
+    try { lastResults = await ({ aud: audSearch, it: itSearch, ia: iaSearch, jam: jamSearch })[lastSource](lastQuery); } catch (err) { lastResults = null; res.innerHTML = `<p class="empty">${esc(err.message || 'Error de red')}</p>`; return; }
     show();
   };
   show();
